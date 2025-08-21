@@ -10,8 +10,8 @@
  *   node compress.js input.html
  *   Writes compressed output to output.html (same folder as input)
  *
- * Requires: jsdom, postcss, cssnano, html-minifier-terser
- *   npm install jsdom postcss cssnano html-minifier-terser
+ * Requires:
+ *    npm install jsdom postcss postcss-safe-parser cssnano html-minifier-terser
  */
 
 const fs = require('fs');
@@ -20,7 +20,6 @@ const { JSDOM } = require('jsdom');
 const postcss = require('postcss');
 const cssnano = require('cssnano');
 const { minify: minifyHtml } = require('html-minifier-terser');
-const puppeteer = require('puppeteer');
 
 // Generate short class names: a, b, ..., z, aa, ab, ...
 function* classNameGen() {
@@ -53,50 +52,15 @@ function parseStyle(style) {
     .filter(Boolean);
 }
 
-
-async function htmlToPdf(htmlPath, pdfPath) {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
-  await page.goto('file://' + htmlPath, { waitUntil: 'networkidle0' });
-  // Remove sticky/fixed elements (e.g., floating windows/toolbars)
-  await page.evaluate(() => {
-    // Remove all elements with position:fixed or position:sticky
-    const all = Array.from(document.querySelectorAll('*'));
-    for (const el of all) {
-      const style = window.getComputedStyle(el);
-      if (style.position === 'fixed' || style.position === 'sticky') {
-        el.parentNode && el.parentNode.removeChild(el);
-      }
-    }
-  });
-  // Get the full height of the rendered page content
-  const bodyHandle = await page.$('body');
-  const boundingBox = await bodyHandle.boundingBox();
-  const contentHeight = Math.ceil(boundingBox ? boundingBox.height : 0);
-  await bodyHandle.dispose();
-  // Set a large enough height to fit all content on one page
-  await page.pdf({
-    path: pdfPath,
-    printBackground: true,
-    width: '210mm',
-    height: contentHeight ? `${contentHeight}px` : '297mm',
-    margin: { top: 0, right: 0, bottom: 0, left: 0 },
-    pageRanges: '1',
-    preferCSSPageSize: false
-  });
-  await browser.close();
-}
-
 async function main() {
   if (process.argv.length < 3) {
-    console.error('Usage: node compress.js <input.html> [--pdf]');
+    console.error('Usage: node compress.js <input.html>');
     process.exit(1);
   }
 
   const inputPath = path.resolve(process.argv[2]);
   const gen = classNameGen();
   const outputPath = path.join(path.dirname(inputPath), 'output.html');
-  const toPdf = process.argv.includes('--pdf');
 
   const html = fs.readFileSync(inputPath, 'utf8');
   const dom = new JSDOM(html);
@@ -225,11 +189,6 @@ async function main() {
   fs.writeFileSync(outputPath, minifiedHtml, 'utf8');
   const generated = declsetToClass.size;
   console.log(`Done. Wrote: ${outputPath}\nGenerated ${generated} classes.`);
-  if (toPdf) {
-    const pdfPath = path.join(path.dirname(outputPath), 'output.pdf');
-    await htmlToPdf(outputPath, pdfPath);
-    console.log(`PDF generated: ${pdfPath}`);
-  }
 }
 
 main().catch(err => {
